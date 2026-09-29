@@ -11,7 +11,7 @@ A small, local-first starting point for managing short-term rental properties. T
 
 ## Explore the demo
 
-Select **Explore 6-month demo** in the sidebar (or below the mobile navigation). It generates fictional stays and work for the single property at 516 Tiger Blvd, Bentonville, Arkansas, across the current month and the previous five months, including Airbnb/Vrbo stays, stay amounts, turnover work, and inspections. Use the dashboard snapshot or navigate through the occupancy calendar to inspect each month. The demo is labeled throughout; changes in demo mode are temporary and never overwrite your real browser entries. Select **Return to my data** to leave it. Refreshing the tab regenerates the demo.
+Select **Explore demo since 2025** in the sidebar (or below the mobile navigation). It generates fictional stays and work for the single property at 516 Tiger Blvd, Bentonville, Arkansas, from January 1, 2025 through the current month, including Airbnb/Vrbo stays, stay amounts, turnover work, and inspections. Use the calendar’s **Jan 2025** shortcut to see the first month and navigate forward. The dashboard snapshot continues to show the latest six months. The demo is labeled throughout; changes in demo mode are temporary and never overwrite your real browser entries. Select **Return to my data** to leave it. Refreshing the tab regenerates the demo.
 
 ## First version
 
@@ -24,7 +24,7 @@ The app starts empty and has no account or server. Browser data does not sync ac
 
 ## Structure
 
-- `src/demo.ts` generates repeatable fictional sample data for the rolling six-month window.
+- `src/demo.ts` generates repeatable fictional sample data from January 2025 through the current month.
 - `src/main.ts` contains the typed data model, local storage, view rendering, and form actions.
 - `src/style.css` contains responsive layout and visual styles.
 - `index.html` is the Vite entry point.

@@ -7,7 +7,7 @@ const date = (year: number, month: number, day: number) => {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 }
 
-/** Repeatable sample data for the current month and the preceding five months. */
+/** Repeatable sample data from January 1, 2025 through the current month. */
 export function createDemoData(today: Date): { properties: Property[]; reservations: Reservation[]; work: WorkEntry[] } {
   const property = { id: 'demo-tiger-blvd', name: '516 Tiger Blvd', location: 'Bentonville, AR' }
   const properties = [property]
@@ -15,10 +15,11 @@ export function createDemoData(today: Date): { properties: Property[]; reservati
   const reservations: Reservation[] = []
   const work: WorkEntry[] = []
 
-  for (let offset = -5; offset <= 0; offset++) {
-    const month = new Date(today.getFullYear(), today.getMonth() + offset, 1)
-    const year = month.getFullYear(), index = month.getMonth(), sequence = offset + 5
-    const starts = [2, 11, 20]
+  const currentMonth = (today.getFullYear() - 2025) * 12 + today.getMonth()
+  for (let sequence = 0; sequence <= currentMonth; sequence++) {
+    const month = new Date(2025, sequence, 1)
+    const year = month.getFullYear(), index = month.getMonth()
+    const starts = [1, 11, 20]
     starts.forEach((day, stayIndex) => {
         const length = [3, 4, 5][(sequence + stayIndex) % 3]
         const start = date(year, index, day)
