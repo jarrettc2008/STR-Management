@@ -1,4 +1,5 @@
 import './style.css'
+import { createDemoData } from './demo'
 
 type Property = { id: string; name: string; location: string }
 type Reservation = { id: string; propertyId: string; guest: string; channel: string; start: string; end: string; amount: number }
@@ -24,16 +25,32 @@ function readData(): Data {
     }
   } catch { return { properties: [], reservations: [], work: [] } }
 }
-let data = readData()
+let demoMode = sessionStorage.getItem('str-management:demo') === '1'
+let data = demoMode ? createDemoData(today) : readData()
 let page: Page = 'dashboard'
 let month = new Date(today.getFullYear(), today.getMonth(), 1)
 const root = document.querySelector<HTMLDivElement>('#app')!
-const save = () => { localStorage.setItem(key, JSON.stringify(data)); render() }
+const save = () => { if (!demoMode) localStorage.setItem(key, JSON.stringify(data)); render() }
 const propertyName = (propertyId: string) => data.properties.find(property => property.id === propertyId)?.name || 'Unknown property'
 const propertyOptions = () => data.properties.map(property => `<option value="${escapeHtml(property.id)}">${escapeHtml(property.name)}</option>`).join('')
 const emptyProperties = `<div class="empty">Add a property first to start recording stays and work. <button class="text-button" data-page="properties">Add property →</button></div>`
 const inRange = (date: string, start: string, end: string) => date >= start && date < end
 const nightsInMonth = (reservation: Reservation, start: string, end: string) => Math.max(0, Math.round((Math.min(parseDate(reservation.end).getTime(), parseDate(end).getTime()) - Math.max(parseDate(reservation.start).getTime(), parseDate(start).getTime())) / 86400000))
+
+function sixMonthSummary() {
+  const rows = Array.from({ length: 6 }, (_, index) => {
+    const monthStart = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1)
+    const start = localDate(monthStart)
+    const end = localDate(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1))
+    const nights = data.reservations.reduce((total, stay) => total + nightsInMonth(stay, start, end), 0)
+    // Attribute each stay's amount to its check-in month.
+    const revenue = data.reservations.filter(stay => stay.start >= start && stay.start < end).reduce((total, stay) => total + stay.amount, 0)
+    const hours = data.work.filter(entry => entry.date >= start && entry.date < end).reduce((total, entry) => total + entry.hours, 0)
+    return { label: monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), nights, revenue, hours }
+  })
+  const maxNights = Math.max(1, ...rows.map(row => row.nights))
+  return `<section class="panel history"><div class="section-head"><div><p class="eyebrow">SIX MONTH VIEW</p><h3>Portfolio snapshot</h3></div><span class="muted">Stay amount by check-in month</span></div><div class="history-scroll"><div class="history-grid history-heading"><span>Month</span><span>Booked nights</span><span>Stay amount</span><span>Work hours</span></div>${rows.map(row => `<div class="history-grid"><b>${row.label}</b><span class="bar-cell"><span class="bar" style="width:${Math.round(row.nights / maxNights * 100)}%"></span><span>${row.nights}</span></span><span>${money(row.revenue)}</span><span>${row.hours.toFixed(1)} h</span></div>`).join('')}</div></section>`
+}
 
 function dashboard() {
   const start = localDate(new Date(today.getFullYear(), today.getMonth(), 1))
@@ -45,7 +62,7 @@ function dashboard() {
   return `<div class="hero"><div><p class="eyebrow">YOUR RENTAL OVERVIEW</p><h2>Everything in one place.</h2><p>Keep tabs on stays, property work, and what needs attention next.</p></div><button class="primary" data-page="occupancy">View occupancy →</button></div>
     <div class="stats"><article class="stat"><span>Properties</span><strong>${data.properties.length}</strong><small>In your portfolio</small></article><article class="stat"><span>Booked nights</span><strong>${nights}</strong><small>This month · all properties</small></article><article class="stat"><span>Work logged</span><strong>${hours.toFixed(1)} h</strong><small>This month</small></article></div>
     <div class="columns"><section class="panel"><div class="section-head"><div><p class="eyebrow">COMING UP</p><h3>Upcoming checkouts</h3></div><button class="text-button" data-page="occupancy">Calendar →</button></div>${departures.length ? departures.map(stay => `<div class="list-row"><div><b>${escapeHtml(stay.guest)}</b><small>${escapeHtml(propertyName(stay.propertyId))} · ${escapeHtml(stay.channel)}</small></div><span class="pill">${dateLabel(stay.end)}</span></div>`).join('') : '<p class="muted">No upcoming checkouts yet.</p>'}</section>
-    <section class="panel"><div class="section-head"><div><p class="eyebrow">RECENT ACTIVITY</p><h3>Work log</h3></div><button class="text-button" data-page="work">All entries →</button></div>${recent.length ? recent.map(entry => `<div class="list-row"><div><b>${escapeHtml(entry.activity)}</b><small>${escapeHtml(propertyName(entry.propertyId))} · ${dateLabel(entry.date)}</small></div><span class="pill">${entry.hours.toFixed(1)} h</span></div>`).join('') : '<p class="muted">No work logged yet.</p>'}</section></div>`
+    <section class="panel"><div class="section-head"><div><p class="eyebrow">RECENT ACTIVITY</p><h3>Work log</h3></div><button class="text-button" data-page="work">All entries →</button></div>${recent.length ? recent.map(entry => `<div class="list-row"><div><b>${escapeHtml(entry.activity)}</b><small>${escapeHtml(propertyName(entry.propertyId))} · ${dateLabel(entry.date)}</small></div><span class="pill">${entry.hours.toFixed(1)} h</span></div>`).join('') : '<p class="muted">No work logged yet.</p>'}</section></div>${sixMonthSummary()}`
 }
 function occupancy() {
   const year = month.getFullYear(), index = month.getMonth()
@@ -67,11 +84,21 @@ function properties() {
 }
 function render() {
   const labels: Record<Page, string> = { dashboard: 'Dashboard', occupancy: 'Occupancy', work: 'Work log', properties: 'Properties' }
-  root.innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">⌂</span><div><strong>STR Management</strong><small>PROPERTY OPERATIONS</small></div></div><p class="nav-label">WORKSPACE</p><nav aria-label="Main navigation">${(Object.keys(labels) as Page[]).map((item, i) => `<button data-page="${item}" class="nav-item ${page === item ? 'active' : ''}" ${page === item ? 'aria-current="page"' : ''}><span class="nav-icon">${['▦','▤','◷','⌂'][i]}</span>${labels[item]}</button>`).join('')}</nav><div class="sidebar-note"><b>Local workspace</b><p>Your entries are saved in this browser.</p></div></aside><main class="main"><header class="header"><div><span class="mobile-brand">STR Management</span><p class="eyebrow">PROPERTY OPERATIONS</p><h1>${labels[page]}</h1></div><span class="date-badge">${today.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span></header><div class="content">${{dashboard, occupancy, work: workLog, properties}[page]()}</div></main></div>`
+  root.innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">⌂</span><div><strong>STR Management</strong><small>PROPERTY OPERATIONS</small></div></div><p class="nav-label">WORKSPACE</p><nav aria-label="Main navigation">${(Object.keys(labels) as Page[]).map((item, i) => `<button data-page="${item}" class="nav-item ${page === item ? 'active' : ''}" ${page === item ? 'aria-current="page"' : ''}><span class="nav-icon">${['▦','▤','◷','⌂'][i]}</span>${labels[item]}</button>`).join('')}</nav><div class="sidebar-note"><b>${demoMode ? 'Demo workspace' : 'Local workspace'}</b><p>${demoMode ? 'Sample entries are temporary and never mixed with your real data.' : 'Your entries are saved in this browser.'}</p><button class="mode-button" data-demo="${demoMode ? 'off' : 'on'}">${demoMode ? 'Return to my data' : 'Explore 6-month demo'}</button></div></aside><main class="main"><header class="header"><div><span class="mobile-brand">STR Management</span><p class="eyebrow">PROPERTY OPERATIONS</p><h1>${labels[page]}</h1></div><span class="date-badge">${today.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span></header><div class="content">${demoMode ? '<div class="demo-banner"><b>DEMO DATA</b> · Six months of fictional stays and work. Changes here are temporary. <button data-demo="off">Return to my data</button></div>' : ''}${{dashboard, occupancy, work: workLog, properties}[page]()}</div></main></div>`
 }
 root.addEventListener('click', event => {
-  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-page], [data-month], [data-delete]')
+  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-page], [data-month], [data-delete], [data-demo]')
   if (!target) return
+  if (target.dataset.demo) {
+    demoMode = target.dataset.demo === 'on'
+    if (demoMode) sessionStorage.setItem('str-management:demo', '1')
+    else sessionStorage.removeItem('str-management:demo')
+    data = demoMode ? createDemoData(today) : readData()
+    page = 'dashboard'
+    month = new Date(today.getFullYear(), today.getMonth(), 1)
+    render()
+    return
+  }
   if (target.dataset.page) { page = target.dataset.page as Page; render(); window.scrollTo(0, 0) }
   if (target.dataset.month) { month = target.dataset.month === '0' ? new Date(today.getFullYear(), today.getMonth(), 1) : new Date(month.getFullYear(), month.getMonth() + Number(target.dataset.month), 1); render() }
   if (target.dataset.delete) {
