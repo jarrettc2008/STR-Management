@@ -11,7 +11,7 @@ A small, local-first starting point for managing short-term rental properties. T
 
 ## Explore the demo
 
-Select **Explore 6-month demo** in the sidebar (or below the mobile navigation). It generates fictional data for two properties across the current month and the previous five months, including Airbnb/Vrbo stays, stay amounts, turnover work, and inspections. Use the dashboard snapshot or navigate through the occupancy calendar to inspect each month. The demo is labeled throughout; changes in demo mode are temporary and never overwrite your real browser entries. Select **Return to my data** to leave it. Refreshing the tab regenerates the demo.
+Select **Explore 6-month demo** in the sidebar (or below the mobile navigation). It generates fictional stays and work for the single property at 516 Tiger Blvd, Bentonville, Arkansas, across the current month and the previous five months, including Airbnb/Vrbo stays, stay amounts, turnover work, and inspections. Use the dashboard snapshot or navigate through the occupancy calendar to inspect each month. The demo is labeled throughout; changes in demo mode are temporary and never overwrite your real browser entries. Select **Return to my data** to leave it. Refreshing the tab regenerates the demo.
 
 ## First version
 
