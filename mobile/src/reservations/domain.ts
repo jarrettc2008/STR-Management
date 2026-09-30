@@ -12,7 +12,24 @@ export type BookingSource = {
   cleaningRequired: boolean | null; hotTubService: boolean | null;
   rawGuestCounts: Record<string, unknown>;
 };
-export type Guest = { id: string; displayName: string; email: string | null; phone: string | null; profileUrl: string | null; profileSource: string | null; profileVerifiedManually: boolean; profileAddedAt: string | null; notes: string; createdAt: string; updatedAt: string };
+export type GuestSex = 'female' | 'male' | 'nonbinary' | 'unspecified';
+/** Optional on-device demographics (demo or locally entered). Never inferred from profiles/cloud. */
+export type Guest = {
+  id: string;
+  displayName: string;
+  email: string | null;
+  phone: string | null;
+  profileUrl: string | null;
+  profileSource: string | null;
+  profileVerifiedManually: boolean;
+  profileAddedAt: string | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  age?: number | null;
+  sex?: GuestSex | null;
+  homeLocation?: string | null;
+};
 export type Reservation = { id: string; guestId: string; source: BookingSource; overrides: Overrides; overrideUpdatedAt: string | null; updatedAt: string; guest: Guest };
 export function safeExternalUrl(value: string) {
   if (typeof value !== 'string' || value.length > 2048) throw new Error('Enter a valid HTTPS profile or booking URL.');

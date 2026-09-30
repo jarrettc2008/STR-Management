@@ -81,5 +81,5 @@ The former occupancy placeholder now displays a full month grid on the home dash
 The home Occupancy card is now compact and opens the larger calendar at /occupancy when selected. The calendar page includes a Back to overview action and retains month navigation, stay bars, and reservation details.
 
 
-Calendar stay bars and selected-day rows now show the effective human guest count beside the guest name. The detail person icon opens a stored, manually verified external profile directly; without one it opens the profile editor. A separate contact/edit action always remains available. Demo mode uses clearly labeled synthetic party sizes and opens only the Facebook homepage, never an invented personal profile association.
+Calendar stay bars and selected-day rows now show the effective human guest count beside the guest name. The detail person icon opens a stored, manually verified external profile directly; without one it opens the profile editor. A separate contact/edit action always remains available. Demo mode uses clearly labeled synthetic party sizes and opens sample public Facebook profiles (well-known public figures), never invented private guest URLs.
 

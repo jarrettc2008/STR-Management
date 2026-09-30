@@ -14,7 +14,7 @@ export default function OccupancyWidget() {
     <View style={s.row}><Feather name="calendar" size={19} color="#527052" /><Feather name="maximize-2" size={17} color="#527052" /></View>
     <Text style={s.value}>{work.signedIn ? summary.occupiedPropertyNights : '—'}</Text>
     <Text style={s.title}>Occupancy</Text>
-    <Text style={s.caption}>{work.signedIn ? 'Booked nights · This month' : 'Monthly stay overview'}</Text>
+    <Text style={s.caption}>{work.signedIn ? (work.demo ? 'Demo · Booked nights · This month' : 'Booked nights · This month') : 'Sign in or show demo data'}</Text>
     <Text style={s.link}>Open calendar ↗</Text>
   </Pressable>;
 }

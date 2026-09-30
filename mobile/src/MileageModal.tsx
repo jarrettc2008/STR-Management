@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { inPeriod, newDraft, totalMiles, validateTrip, type Trip, type TripDraft } from './mileage';
 import type { useMileage } from './useMileage';
+import { seedDemoMileage } from './demo/seedLocalDemo';
 import TripDateField from './TripDateField';
 import TripRecorder from './TripRecorder';
 import RouteMap from './RouteMap';
@@ -18,10 +19,26 @@ export default function MileageModal({ visible, onClose, mileage, period }: Prop
   const [discard, setDiscard] = useState(false);
   const [validation, setValidation] = useState('');
   const [gpsStatus, setGpsStatus] = useState('');
+  const [seedingSamples, setSeedingSamples] = useState(false);
+  const [seedNotice, setSeedNotice] = useState('');
   const requestId = useRef(0);
   const [filter, setFilter] = useState(period);
   const selected = inPeriod(mileage.trips, filter);
   const close = () => { if (mileage.saving) return; if (draft) setDiscard(true); else onClose(); };
+  async function loadSampleTrips() {
+    if (seedingSamples || mileage.saving) return;
+    setSeedingSamples(true); setSeedNotice(''); setValidation('');
+    try {
+      const count = await seedDemoMileage();
+      await mileage.load();
+      setSeedNotice(`Loaded ${count} sample trips on this device.`);
+    } catch (e) {
+      setValidation(e instanceof Error ? e.message : 'Could not load sample trips.');
+    } finally {
+      setSeedingSamples(false);
+    }
+  }
+
   const cancelDraft = () => { requestId.current++; setDraft(null); setEditing(null); setValidation(''); setDiscard(false); setGpsStatus(''); };
   async function locate() {
     const request = ++requestId.current;
@@ -75,7 +92,7 @@ export default function MileageModal({ visible, onClose, mileage, period }: Prop
           <View style={s.summary}><View><Text style={s.summaryLabel}>TOTAL MILES</Text><Text style={s.total}>{mileage.ready ? totalMiles(selected).toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'} <Text style={{ fontSize: 16 }}>mi</Text></Text></View><Text style={s.summaryLabel}>{mileage.ready ? `${selected.length} ${selected.length === 1 ? 'trip' : 'trips'}` : 'Loading records'}</Text></View>
           <Pressable accessibilityRole="button" disabled={!mileage.ready || !!mileage.active} onPress={beginDraft} style={[s.primary, (!mileage.ready || !!mileage.active) && s.disabled]}><Text style={s.primaryText}>+  Log a property trip manually</Text></Pressable>
           <Text accessibilityRole="header" style={s.heading}>History</Text>
-          {mileage.ready && selected.length === 0 && <View style={[s.card, { alignItems: 'center', paddingVertical: 32 }]}><Feather name="map" size={32} color="#788c6a" /><Text style={s.heading}>A fresh start</Text><Text style={[s.body, { textAlign: 'center' }]}>No trips for this period. Start recording or log a property trip.</Text></View>}
+          {!mileage.ready && <View style={[s.card, { alignItems: 'center', paddingVertical: 28 }]}><Text style={s.heading}>Loading trips…</Text><Text style={[s.body, { textAlign: 'center' }]}>Reading mileage records saved on this device.</Text></View>}{!!seedNotice && <Text style={[s.body, { color: '#294e3b' }]}>{seedNotice}</Text>}{mileage.ready && selected.length === 0 && <View style={[s.card, { alignItems: 'center', paddingVertical: 32 }]}><Feather name="map" size={32} color="#788c6a" /><Text style={s.heading}>No trips yet</Text><Text style={[s.body, { textAlign: 'center' }]}>No trips for this period. Start a GPS trip above or log one manually.</Text><Pressable accessibilityRole="button" disabled={seedingSamples || mileage.saving} onPress={() => { void loadSampleTrips(); }} style={{ marginTop: 16, minHeight: 44, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, backgroundColor: '#edf1e4', borderWidth: 1, borderColor: '#dfe6d4' }}><Text style={{ color: '#294e3b', fontWeight: '600' }}>{seedingSamples ? 'Loading samples…' : 'Load sample trips (on this device)'}</Text></Pressable></View>}
           {selected.length > 0 && <ScrollView horizontal><View style={{ minWidth: 680 }}>
             <View style={[s.historyRow, { backgroundColor: '#e8eedf' }]}>{['Date', 'Mileage', 'OD start', 'OD end', 'Business purpose'].map((title, i) => <Text key={title} style={[s.historyCell, i === 4 && { width: 220 }, { fontWeight: '700' }]}>{title}</Text>)}</View>
             {[...selected].sort((a, b) => b.date.localeCompare(a.date)).map(trip => <View key={trip.id} style={s.historyEntry}>

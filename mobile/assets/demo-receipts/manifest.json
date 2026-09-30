@@ -1,0 +1,26 @@
+[
+  {
+    "id": "home-depot-supplies",
+    "file": "home-depot-supplies.png",
+    "text": "HOME DEPOT #412\nBentonville, AR 72712\n09/18/2026\nReceipt # HD-88421\n2x Lumber 2x4 8.97\nPaint Roller 6.48\nCleaning Supplies 12.50\nSubtotal 27.95\nState Tax 2.00\nCity Tax 0.61\nTotal 30.56\nVISA 30.56",
+    "asset": "../../assets/demo-receipts/home-depot-supplies.png"
+  },
+  {
+    "id": "walmart-restock",
+    "file": "walmart-restock.png",
+    "text": "WALMART SUPERCENTER\nRogers, AR 72756\n2026-09-12\nInvoice # WM-55210\nPaper Towels 9.98\nToilet Paper 14.47\nDish Soap 3.24\nTrash Bags 7.86\nSubtotal 35.55\nSales tax 2.84\nTotal 38.39\nDEBIT 38.39",
+    "asset": "../../assets/demo-receipts/walmart-restock.png"
+  },
+  {
+    "id": "lowes-maintenance",
+    "file": "lowes-maintenance.png",
+    "text": "LOWE'S OF BENTONVILLE\n09/05/2026\nReceipt # LW-11903\n1x Hot Tub Filter 24.99\nWater Test Kit 11.50\nChlorine Tablets 18.75\nSubtotal 55.24\nTax 4.42\nTotal 59.66\nMASTERCARD 59.66",
+    "asset": "../../assets/demo-receipts/lowes-maintenance.png"
+  },
+  {
+    "id": "costco-household",
+    "file": "costco-household.jpg",
+    "text": "COSTCO WHOLESALE\n2026-08-28\nTransaction # CS-44012\n2x Laundry Detergent 19.99\nGuest Towels 29.99\nSnack Variety Pack 16.49\nSubtotal 66.47\nTax 5.32\nTotal 71.79\nVISA 71.79",
+    "asset": "../../assets/demo-receipts/costco-household.jpg"
+  }
+]

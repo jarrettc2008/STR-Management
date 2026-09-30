@@ -6,6 +6,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: 'str-management',
   plugins: [
     'expo-router',
+    'expo-asset',
     ...(config.plugins ?? []),
     ['expo-image-picker', { cameraPermission: 'Photograph receipts for your property expense records.', photosPermission: 'Choose receipt photos for your expense records.', microphonePermission: false }],
     'expo-sharing',

@@ -1,4 +1,12 @@
 import { createWorker } from 'tesseract.js';
+
+export class OcrUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OcrUnavailableError';
+  }
+}
+
 export async function recognizeReceipt(uri: string, progress: (value: number) => void): Promise<{ text: string; engine: string }> {
   const worker = await createWorker('eng', 1, { workerPath: '/ocr/worker.min.js', corePath: '/ocr', langPath: '/ocr', logger: event => { if (event.status === 'recognizing text') progress(event.progress); } });
   let timer: ReturnType<typeof setTimeout> | undefined;

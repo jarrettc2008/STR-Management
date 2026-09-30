@@ -8,8 +8,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import { CURRENT_PROPERTY } from '../property';
 import { allocateReceipt, approvalIssues, approvedTotal, decimal, dollars, emptyFields, EXPENSE_TYPES, quantityTotal, type OriginalFile, type Receipt, type ReceiptFields } from './domain';
 import { openOriginal, originalUri, preserveOriginal, releaseOriginalUri, type PickedFile } from './files';
-import { recognizeReceipt } from './ocr';
+import { recognizeReceipt, OcrUnavailableError } from './ocr';
 import { parseReceipt } from './extract';
+import { RECEIPT_FIXTURES, matchReceiptFixture, pickedFileFromFixture } from '../demo/receiptFixtures';
+import { seedOnDeviceDemoData } from '../demo/seedLocalDemo';
 import type { useReceipts } from './useReceipts';
 
 function OriginalPreview({ original }: { original: OriginalFile }) {
@@ -34,6 +36,7 @@ export default function ReceiptModal({ receipts, onClose, period }: Props) {
   const [audit, setAudit] = useState(false);
   const [leave, setLeave] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const captureLock = useRef(false);
   const busy = !!phase || receipts.saving;
   const allocation = fields ? allocateReceipt(fields) : null;
@@ -45,6 +48,42 @@ export default function ReceiptModal({ receipts, onClose, period }: Props) {
   function update(next: ReceiptFields) { setFields(next); setDirty(true); setConfirmed(false); setError(''); }
   function closeReview() { setRecord(null); setFields(null); setDirty(false); setLeave(false); setAudit(false); setError(''); setNotice(''); }
   function close() { if (busy) return; if (record) { if (dirty) setLeave(true); else closeReview(); } else onClose(); }
+
+  async function loadSampleFixture(fixtureId?: string) {
+    if (captureLock.current || !receipts.ready) return;
+    captureLock.current = true;
+    setError(''); setNotice(''); setPhase('Loading on-device sample receipt'); setProgress(0);
+    try {
+      const fixture = RECEIPT_FIXTURES.find(f => f.id === fixtureId) ?? RECEIPT_FIXTURES[0];
+      const picked = await pickedFileFromFixture(fixture);
+      const id = `receipt-sample-${fixture.id}-${Date.now()}`;
+      const original = await preserveOriginal(id, picked);
+      const extracted = parseReceipt(fixture.text, CURRENT_PROPERTY.id);
+      extracted.expenseType = fixture.expenseType;
+      extracted.notes = 'Loaded from on-device sample image. Verify before approving.';
+      const timestamp = new Date().toISOString();
+      const next: Receipt = {
+        id, ownerId: CURRENT_PROPERTY.ownerId, original,
+        extraction: { rawText: fixture.text, fields: copy(extracted), engine: 'Demo fixture text (on-device sample)', capturedAt: timestamp },
+        reviewed: extracted, status: 'draft', createdAt: timestamp, updatedAt: timestamp, revisions: [],
+      };
+      setRecord(next); setFields(copy(extracted)); setConfirmed(false); setDirty(false);
+      if (!(await receipts.save(next))) throw new Error('Sample receipt could not be saved locally. Try again.');
+      setNotice('Sample autofilled on this device · Verify & edit, then save draft or approve.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Sample receipt could not be loaded.'); }
+    finally { setPhase(''); captureLock.current = false; }
+  }
+  async function seedLocalSamples() {
+    if (seeding || !receipts.ready) return;
+    setSeeding(true); setError(''); setNotice('');
+    try {
+      const result = await seedOnDeviceDemoData({ replace: true });
+      await receipts.load();
+      setNotice(`Loaded ${result.receipts} sample receipt(s), ${result.trips} mileage trip(s), and ${result.taxPayments ?? 0} tax payment(s) on this device. Open a draft to verify & edit.`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not seed on-device samples.'); }
+    finally { setSeeding(false); }
+  }
+
   async function capture(camera: boolean) {
     if (captureLock.current || !receipts.ready) return;
     captureLock.current = true;
@@ -77,12 +116,28 @@ export default function ReceiptModal({ receipts, onClose, period }: Props) {
       setPhase('Reading receipt text');
       const uri = await originalUri(original);
       try {
-        const result = await recognizeReceipt(uri, setProgress);
+        let result: { text: string; engine: string };
+        try {
+          result = await recognizeReceipt(uri, setProgress);
+        } catch (ocrError) {
+          const fixture = matchReceiptFixture(picked.name);
+          if (fixture) {
+            result = { text: fixture.text, engine: 'Demo fixture text (OCR unavailable · on-device sample)' };
+            setProgress(1);
+          } else if (ocrError instanceof OcrUnavailableError) {
+            setNotice(ocrError.message + ' Tip: use “Load sample receipts” to demo autofill, or fill the form below.');
+            return;
+          } else {
+            throw ocrError;
+          }
+        }
         const extracted = parseReceipt(result.text, CURRENT_PROPERTY.id);
+        const fixture = matchReceiptFixture(picked.name);
+        if (fixture) extracted.expenseType = fixture.expenseType;
         next = { ...next, extraction: { rawText: result.text, fields: copy(extracted), engine: result.engine, capturedAt: new Date().toISOString() }, reviewed: extracted, updatedAt: new Date().toISOString() };
         setRecord(next); setFields(copy(extracted));
         if (!(await receipts.save(next))) { setDirty(true); throw new Error('Text was extracted but could not be saved. Use Save draft to retry.'); }
-        setNotice('Text extracted. Verify the original, every item, and all totals before approving.');
+        setNotice('Autofill ready · Verify & edit every field against the original before approving.');
       } finally { releaseOriginalUri(uri); }
     } catch (e) { setError(e instanceof Error ? e.message : 'Receipt could not be processed. Try again or enter its details manually.'); }
     finally { setPhase(''); captureLock.current = false; }
@@ -102,14 +157,15 @@ export default function ReceiptModal({ receipts, onClose, period }: Props) {
   const input = (key: keyof Omit<ReceiptFields, 'items' | 'taxes' | 'expenseType' | 'propertyId'>, label: string, numeric = false) => <View style={s.field}><Text style={s.label}>{label}</Text><TextInput accessibilityLabel={label} style={s.input} value={fields?.[key] ?? ''} onChangeText={value => { if (fields) update({ ...fields, [key]: value }); }} editable={!busy} keyboardType={numeric ? 'decimal-pad' : 'default'} multiline={key === 'notes'} maxLength={key === 'notes' ? 2000 : 200} /></View>;
   return <Modal visible animationType="slide" onRequestClose={close}><SafeAreaView style={s.safe}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
     <View style={s.row}><View style={s.icon}><Feather name="file-text" size={24} color="#294e3b" /></View><Pressable accessibilityRole="button" accessibilityLabel={record ? 'Back to receipts' : 'Close receipts'} disabled={busy} onPress={close} style={s.secondary}><Feather name="x" size={24} color="#294e3b" /></Pressable></View>
-    <Text style={s.kicker}>{CURRENT_PROPERTY.name.toUpperCase()} · RECEIPTS & EXPENSES</Text><Text accessibilityRole="header" style={s.title}>{record ? 'Review your receipt' : 'Every expense, in its place.'}</Text>
-    <Text style={s.body}>{record ? 'Original preserved. Only reviewed and approved expenses count toward your reports.' : 'Capture a receipt, keep what belongs to your property, and review before it counts.'}</Text>
+    <Text style={s.kicker}>{CURRENT_PROPERTY.name.toUpperCase()} · RECEIPTS & EXPENSES</Text><Text accessibilityRole="header" style={s.title}>{record ? 'Verify & edit receipt' : 'Every expense, in its place'}</Text>
+    <Text style={s.body}>{record ? 'Step 2 · Check autofilled merchant, date, items, and totals against the original. Correct anything, then save draft or approve. Everything stays on this device.' : 'Capture or upload a receipt. On-device OCR autofills fields when available; samples demo the same verify/edit flow in Expo Go.'}</Text>
     {(error || receipts.error) && <Text accessibilityRole="alert" style={s.error}>{error || receipts.error}</Text>}
-    {!receipts.ready && <Pressable accessibilityRole="button" onPress={() => void receipts.load()} style={s.secondary}><Text>Retry receipt storage</Text></Pressable>}
-    {!!notice && <Text style={s.notice}>{notice}</Text>}
+    {!receipts.ready && <View style={s.notice}><Text style={s.body}>Loading receipts saved on this device…</Text><Pressable accessibilityRole="button" onPress={() => void receipts.load()} style={[s.secondary, { minHeight: 44 }]}><Text style={s.link}>Retry receipt storage</Text></Pressable></View>}
+    {!!notice && <View style={s.notice}><Text style={s.body}>{notice}</Text></View>}
     {!!phase && <View style={s.notice}><ActivityIndicator color="#294e3b" /><Text accessibilityLiveRegion="polite" style={s.body}>{phase}{progress > 0 ? ` · ${Math.round(progress * 100)}%` : '…'}</Text></View>}
     {leave && <View style={s.notice}><Text style={s.body}>Leave this review? Changes since the last save will be lost. Your saved draft and original remain.</Text><View style={s.row}><Pressable accessibilityRole="button" onPress={() => setLeave(false)} style={s.secondary}><Text>Keep reviewing</Text></Pressable><Pressable accessibilityRole="button" onPress={closeReview} style={s.secondary}><Text>Leave review</Text></Pressable></View></View>}
     {record && fields && allocation ? <>
+      <View style={s.verifyBanner}><Text style={s.label}>Verify & edit</Text><Text style={s.small}>{record.extraction ? `Autofilled by ${record.extraction.engine}. Confirm each field matches the original.` : 'No autofill yet — enter fields from the original, then save.'}</Text></View>
       <OriginalPreview original={record.original} />
       <View style={s.card}>{input('merchant', 'Merchant / vendor')}{input('date', 'Receipt date (YYYY-MM-DD)')}{input('receiptNumber', 'Receipt number (optional)')}
         <Text style={s.label}>Expense type</Text><View style={s.picker}><Picker style={{ minHeight: 48, color: '#294e3b', backgroundColor: '#fafbf7', fontSize: 15 }} accessibilityLabel="Expense type" selectedValue={fields.expenseType} enabled={!busy} onValueChange={value => update({ ...fields, expenseType: value })}>{EXPENSE_TYPES.map(type => <Picker.Item key={type.id} label={type.label} value={type.id} />)}</Picker></View><Text style={s.label}>Property</Text><Text style={s.body}>{CURRENT_PROPERTY.address}</Text>
@@ -135,17 +191,19 @@ export default function ReceiptModal({ receipts, onClose, period }: Props) {
       <Pressable accessibilityRole="button" onPress={() => setAudit(!audit)} style={s.secondary}><Text style={s.link}>{audit ? 'Hide' : 'View'} original transcription & review history</Text></Pressable>
       {audit && <View style={s.card}><Text style={s.label}>{record.extraction?.engine ?? 'Manual entry / extraction unavailable'}</Text><Text selectable style={s.small}>{record.extraction?.rawText || 'No OCR text. The original receipt file is preserved above.'}</Text>{record.extraction && <Text style={s.body}>Initial extracted subtotal: {record.extraction.fields.subtotal || 'Unknown'} · total: {record.extraction.fields.total || 'Unknown'}</Text>}{record.revisions.map((revision, i) => <View key={i}><Text style={s.label}>{revision.at} · {revision.status}</Text><Text selectable style={s.small}>{revision.fields.merchant} · Total {revision.fields.total} · {revision.fields.items.map(item => `${item.included ? 'Included' : 'Excluded'}: ${item.description} ${item.lineTotal}`).join('; ')}</Text></View>)}</View>}
     </> : <>
-      <View style={s.row}><Pressable accessibilityRole="button" disabled={busy || !receipts.ready} onPress={() => void capture(true)} style={[s.primary, { flex: 1 }]}><Text style={s.primaryText}>Take photo</Text></Pressable><Pressable accessibilityRole="button" disabled={busy || !receipts.ready} onPress={() => void capture(false)} style={[s.primary, { flex: 1 }]}><Text style={s.primaryText}>Upload receipt</Text></Pressable></View><Text style={s.small}>Images or PDF · up to 20 MB · PDFs are retained for manual review</Text>
+      <View style={s.row}><Pressable accessibilityRole="button" disabled={busy || !receipts.ready} onPress={() => void capture(true)} style={[s.primary, { flex: 1 }]}><Text style={s.primaryText}>Take photo</Text></Pressable><Pressable accessibilityRole="button" disabled={busy || !receipts.ready} onPress={() => void capture(false)} style={[s.primary, { flex: 1 }]}><Text style={s.primaryText}>Upload receipt</Text></Pressable></View><Text style={s.small}>Images or PDF · up to 20 MB · PDFs are retained for manual review · OCR runs on-device when available</Text>
+      <View style={s.row}><Pressable accessibilityRole="button" disabled={busy || seeding || !receipts.ready} onPress={() => void seedLocalSamples()} style={[s.secondary, s.sampleBtn, { flex: 1 }]}><Text style={s.link}>{seeding ? 'Loading samples…' : 'Load sample receipts + mileage'}</Text></Pressable><Pressable accessibilityRole="button" disabled={busy || !receipts.ready} onPress={() => void loadSampleFixture()} style={[s.secondary, s.sampleBtn, { flex: 1 }]}><Text style={s.link}>Try one sample now</Text></Pressable></View>
+      <Text style={s.small}>Samples stay on this phone. In Expo Go, native OCR may be limited — samples still autofill so you can practice verify & edit.</Text>
       <View style={s.filters}>{(['list', 'reports'] as const).map(tab => <Pressable accessibilityRole="button" accessibilityState={{ selected: view === tab }} key={tab} onPress={() => setView(tab)} style={[s.filter, view === tab && s.selected]}><Text style={s.link}>{tab === 'list' ? 'Receipt list' : 'Expense report'}</Text></Pressable>)}</View>
       <View style={s.filters}>{['This month', 'This year', 'All time'].map(value => <Pressable accessibilityRole="button" accessibilityState={{ selected: filter === value }} key={value} onPress={() => setFilter(value)} style={[s.filter, filter === value && s.selected]}><Text style={s.small}>{value}</Text></Pressable>)}</View>
-      {view === 'reports' ? <><View style={s.summary}><Text style={s.summaryTitle}>Approved expenses · {filter.toLowerCase()}</Text><Text style={s.reportTotal}>{dollars(approvedTotal(reporting))}</Text><Text style={s.summaryText}>Drafts and excluded items do not count.</Text></View>{EXPENSE_TYPES.map(type => <View key={type.id} style={s.card}><Text style={s.label}>{type.label}</Text><Text style={s.heading}>{dollars(approvedTotal(reporting.filter(r => r.reviewed.expenseType === type.id)))}</Text></View>)}<Text style={s.small}>USD · {CURRENT_PROPERTY.address}. This reports recorded expenses, not profit or tax deductibility.</Text></> : <>
+      {view === 'reports' ? <><View style={s.summary}><Text style={s.summaryTitle}>Approved expenses · {filter.toLowerCase()}</Text><Text style={s.reportTotal}>{dollars(approvedTotal(reporting))}</Text><Text style={s.summaryText}>Drafts and excluded items do not count.</Text></View>{EXPENSE_TYPES.map(type => <View key={type.id} style={s.card}><Text style={s.label}>{type.label}</Text><Text style={s.heading}>{dollars(approvedTotal(reporting.filter(r => r.reviewed.expenseType === type.id)))}</Text></View>)}<Text style={s.small}>{`USD · ${CURRENT_PROPERTY.address}. This reports recorded expenses, not profit or tax deductibility.`}</Text></> : <>
         <View style={s.picker}><Picker style={{ minHeight: 48, color: '#294e3b', backgroundColor: '#fafbf7', fontSize: 15 }} accessibilityLabel="Receipt status filter" selectedValue={status} onValueChange={setStatus}><Picker.Item label="All receipts" value="all" /><Picker.Item label="Needs review" value="draft" /><Picker.Item label="Approved" value="approved" /></Picker></View>
-        {!filtered.length && <View style={s.original}><Feather name="inbox" size={34} color="#73816d" /><Text style={s.heading}>Your receipts start here</Text><Text style={s.body}>No receipts for this period. Capture or upload your first receipt.</Text></View>}
+        {!filtered.length && <View style={s.original}><Feather name="inbox" size={34} color="#73816d" /><Text style={s.heading}>Your receipts start here</Text><Text style={s.body}>No receipts in this period. Capture or upload your first receipt.</Text></View>}
         {[...filtered].sort((a, b) => b.reviewed.date.localeCompare(a.reviewed.date)).map(receipt => <Pressable accessibilityRole="button" key={receipt.id} onPress={() => edit(receipt)} style={s.card}><Text style={s.label}>{receipt.reviewed.date || 'Date needs review'}  ·  {EXPENSE_TYPES.find(type => type.id === receipt.reviewed.expenseType)?.label}</Text><View style={s.row}><Text style={[s.heading, { flex: 1 }]}>{receipt.reviewed.merchant || 'Merchant needs review'}</Text><Feather name="file-text" size={22} color="#527052" /></View><Text style={s.body}>{receipt.status === 'approved' ? dollars(allocateReceipt(receipt.reviewed).eligibleTotal) : 'Needs review · not in expense totals'}</Text></Pressable>)}
       </>}
       <Text style={[s.small, { marginTop: 22 }]}>Originals and records are saved locally on this device. No cloud backup or account sync is configured.</Text>
     </>}
   </ScrollView></KeyboardAvoidingView></SafeAreaView></Modal>;
 }
-const s = StyleSheet.create({ safe: { flex: 1, backgroundColor: '#f7f8f2' }, page: { padding: 24, paddingBottom: 48, width: '100%', maxWidth: 760, alignSelf: 'center' }, row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, icon: { backgroundColor: '#e8eedf', padding: 14, borderRadius: 16 }, kicker: { color: '#66795e', fontSize: 10, letterSpacing: 1, marginTop: 22 }, title: { fontSize: 30, color: '#294e3b', fontWeight: '600', marginTop: 12 }, body: { color: '#657358', fontSize: 14, lineHeight: 22, marginVertical: 10 }, small: { color: '#66735e', fontSize: 11, lineHeight: 18 }, label: { color: '#3d543b', fontWeight: '600', fontSize: 13, marginBottom: 8 }, heading: { fontSize: 19, fontWeight: '600', color: '#294e3b', marginTop: 16, marginBottom: 10 }, field: { marginTop: 14 }, input: { borderWidth: 1, borderColor: '#cbd6c3', borderRadius: 10, padding: 12, minHeight: 46, color: '#294e3b', backgroundColor: '#fafbf7', fontSize: 15, marginBottom: 8 }, picker: { borderWidth: 1, borderColor: '#cbd6c3', borderRadius: 10, marginTop: 10, marginBottom: 14, overflow: 'hidden' }, card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dfe6d4', borderRadius: 18, padding: 18, marginTop: 14 }, original: { alignItems: 'center', padding: 18, backgroundColor: '#edf1e4', borderRadius: 18, marginTop: 18 }, primary: { backgroundColor: '#294e3b', padding: 14, minHeight: 50, justifyContent: 'center', alignItems: 'center', borderRadius: 12, marginTop: 16 }, primaryText: { color: '#fff', fontWeight: '600', fontSize: 14 }, secondary: { minHeight: 44, padding: 12, justifyContent: 'center', alignItems: 'center' }, link: { color: '#294e3b', fontWeight: '600' }, disabled: { opacity: 0.5 }, error: { color: '#9c382b', fontSize: 13, lineHeight: 21, marginTop: 10 }, notice: { backgroundColor: '#fff3e5', borderRadius: 14, padding: 16, marginTop: 16 }, excluded: { backgroundColor: '#f0f0eb', borderStyle: 'dashed' }, summary: { backgroundColor: '#294e3b', padding: 22, borderRadius: 18, marginTop: 22 }, summaryTitle: { fontSize: 18, color: '#fff', fontWeight: '600', marginBottom: 14 }, summaryRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginVertical: 6 }, summaryText: { color: '#e3eddd', fontSize: 13, flexShrink: 1 }, confirm: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 20 }, filters: { flexDirection: 'row', padding: 4, backgroundColor: '#e8eedf', borderRadius: 12, marginTop: 18 }, filter: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10 }, selected: { backgroundColor: '#fff' }, reportTotal: { color: '#fff', fontSize: 36, fontWeight: '600', marginBottom: 10 } });
+const s = StyleSheet.create({ safe: { flex: 1, backgroundColor: '#f7f8f2' }, page: { padding: 24, paddingBottom: 48, width: '100%', maxWidth: 760, alignSelf: 'center' }, row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, icon: { backgroundColor: '#e8eedf', padding: 14, borderRadius: 16 }, kicker: { color: '#66795e', fontSize: 10, letterSpacing: 1, marginTop: 22 }, title: { fontSize: 30, color: '#294e3b', fontWeight: '600', marginTop: 12 }, body: { color: '#657358', fontSize: 14, lineHeight: 22, marginVertical: 10 }, small: { color: '#66735e', fontSize: 11, lineHeight: 18 }, label: { color: '#3d543b', fontWeight: '600', fontSize: 13, marginBottom: 8 }, heading: { fontSize: 19, fontWeight: '600', color: '#294e3b', marginTop: 16, marginBottom: 10 }, field: { marginTop: 14 }, input: { borderWidth: 1, borderColor: '#cbd6c3', borderRadius: 10, padding: 12, minHeight: 46, color: '#294e3b', backgroundColor: '#fafbf7', fontSize: 15, marginBottom: 8 }, picker: { borderWidth: 1, borderColor: '#cbd6c3', borderRadius: 10, marginTop: 10, marginBottom: 14, overflow: 'hidden' }, card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dfe6d4', borderRadius: 18, padding: 18, marginTop: 14 }, original: { alignItems: 'center', padding: 18, backgroundColor: '#edf1e4', borderRadius: 18, marginTop: 18 }, primary: { backgroundColor: '#294e3b', padding: 14, minHeight: 50, justifyContent: 'center', alignItems: 'center', borderRadius: 12, marginTop: 16 }, primaryText: { color: '#fff', fontWeight: '600', fontSize: 14 }, secondary: { minHeight: 44, padding: 12, justifyContent: 'center', alignItems: 'center' }, link: { color: '#294e3b', fontWeight: '600' }, disabled: { opacity: 0.5 }, error: { color: '#9c382b', fontSize: 13, lineHeight: 21, marginTop: 10 }, notice: { backgroundColor: '#fff3e5', borderRadius: 14, padding: 16, marginTop: 16 }, excluded: { backgroundColor: '#f0f0eb', borderStyle: 'dashed' }, summary: { backgroundColor: '#294e3b', padding: 22, borderRadius: 18, marginTop: 22 }, summaryTitle: { fontSize: 18, color: '#fff', fontWeight: '600', marginBottom: 14 }, summaryRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginVertical: 6 }, summaryText: { color: '#e3eddd', fontSize: 13, flexShrink: 1 }, confirm: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 20 }, filters: { flexDirection: 'row', padding: 4, backgroundColor: '#e8eedf', borderRadius: 12, marginTop: 18 }, filter: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10 }, selected: { backgroundColor: '#fff' }, reportTotal: { color: '#fff', fontSize: 36, fontWeight: '600', marginBottom: 10 }, sampleBtn: { backgroundColor: '#edf1e4', borderRadius: 12, borderWidth: 1, borderColor: '#dfe6d4', marginTop: 10 }, verifyBanner: { backgroundColor: '#fff0d2', borderColor: '#e8c57a', borderWidth: 1, borderRadius: 14, padding: 14, marginTop: 16, gap: 4 } });
 
