@@ -10,3 +10,4 @@ The context replaces only booking/work data and their related properties in demo
 
 Tests cover determinism, January 2025 start, unique IDs, nonoverlapping stays, future-work exclusion, amounts/minutes, calendar mapping and synthetic guest-count reconciliation. At September 28, 2026 the generator produces 105 reservations and 147 work entries. Demo guests include on-device-only age, sex, and homeLocation fields for Guest averages. Sample receipt images live in assets/demo-receipts/; mileage and receipt samples can be loaded into on-device storage from the Receipts and Mileage screens.
 
+- **Your next best nightly rate** (Dashboard Looking ahead / PRICING): always shows an on-device Bentonville mid-market recommendation for 516 Tiger Blvd from embedded AirDNA/AirROI public comps (week strip Mon–Sun $189/$189/$195/$199/$235/$245/$209; featured next-weekend night typically $235). No live sync or API keys — see `src/pricing/nightlyRateRecommendation.ts`.
