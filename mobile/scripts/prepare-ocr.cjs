@@ -1,0 +1,10 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const destination = path.join(root, 'public', 'ocr');
+fs.mkdirSync(destination, { recursive: true });
+fs.copyFileSync(path.join(root, 'node_modules/tesseract.js/dist/worker.min.js'), path.join(destination, 'worker.min.js'));
+const core = path.join(root, 'node_modules/tesseract.js-core');
+for (const file of fs.readdirSync(core)) if (/\.wasm(\.js)?$/.test(file)) fs.copyFileSync(path.join(core, file), path.join(destination, file));
+fs.copyFileSync(path.join(root, 'node_modules/@tesseract.js-data/eng/4.0.0/eng.traineddata.gz'), path.join(destination, 'eng.traineddata.gz'));
+console.log('Local browser OCR assets prepared.');
